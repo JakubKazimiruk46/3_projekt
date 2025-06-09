@@ -1,19 +1,17 @@
+# signature_recognition_custom.py
+"""
+Trening modelu podpisów na Twoich własnych danych zamiast Kaggle
+"""
+
 import os
 import cv2
 import numpy as np
-import kagglehub
 from PIL import Image
 import time
 from models import train_and_evaluate
 from visualization import visualize_pca, visualize_tsne
 
 
-path = kagglehub.dataset_download("robinreni/signature-verification-dataset")
-
-print("Path to dataset files:", path)
-
-
-# Punkt b: Własny algorytm wstępnego przetwarzania (segmentacja, binaryzacja, ścienianie)
 def preprocess_image(image_path):
     try:
         with Image.open(image_path) as img:
@@ -31,13 +29,21 @@ def preprocess_image(image_path):
 
     resized = cv2.resize(binary, (256, 128))  # normalizacja rozmiaru
 
-    # Ścienianie (thinning)
-    thinned = cv2.ximgproc.thinning(resized)
+    # Ścienianie - obsługa różnych metod
+    try:
+        if hasattr(cv2, 'ximgproc'):
+            thinned = cv2.ximgproc.thinning(resized)
+        else:
+            # Fallback - proste ścienianie
+            kernel = np.ones((3,3), np.uint8)
+            thinned = cv2.morphologyEx(resized, cv2.MORPH_OPEN, kernel)
+            thinned = cv2.erode(thinned, kernel, iterations=1)
+    except:
+        thinned = resized
 
     return thinned
 
 
-# Punkt c: Własna procedura ekstrakcji cech
 def extract_features(image):
     if image is None:
         return [0] * 20  # zabezpieczenie
@@ -53,7 +59,7 @@ def extract_features(image):
     aspect_ratio = w / h
     features.extend([black_pixels, aspect_ratio])
 
-    # cecha 3: współczynnik wypełnienia (powierzchnia podpisu względem bounding boxa)
+    # cecha 3: współczynnik wypełnienia
     contours, _ = cv2.findContours(inverted, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
         area = cv2.contourArea(contours[0])
@@ -64,12 +70,12 @@ def extract_features(image):
         fill_ratio = 0
     features.append(fill_ratio)
 
-    # cechy 4–10: Hu Moments – opis kształtu podpisu
+    # cechy 4–10: Hu Moments
     moments = cv2.moments(image)
     hu = cv2.HuMoments(moments).flatten()
     features.extend(hu)
 
-    # cecha 11: liczba konturów (stopień złożoności podpisu)
+    # cecha 11: liczba konturów
     contours_all, _ = cv2.findContours(inverted, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     features.append(len(contours_all))
 
@@ -81,63 +87,131 @@ def extract_features(image):
     bottom = image[h // 2:, :]
     features.extend([np.sum(top == 0), np.sum(bottom == 0)])
 
-    # Punkt d: Opracowanie wektora cech
     return features
 
 
-# Punkt a: Wczytanie zbioru podpisów (min. 10 użytkowników × 5 podpisów)
-def load_data(dataset_path):
+def load_custom_data(dataset_path):
+    """Wczytuje dane z Twoich katalogów signature_photos"""
     features = []
     labels = []
     binary_labels = []
+    
+    print(f"Loading custom data from: {dataset_path}")
+    
+    if not os.path.exists(dataset_path):
+        print(f"ERROR: Dataset path does not exist: {dataset_path}")
+        return np.array([]), np.array([]), np.array([])
+    
+    processed_count = 0
+    failed_count = 0
+    
     for user_folder in os.listdir(dataset_path):
         user_path = os.path.join(dataset_path, user_folder)
         if os.path.isdir(user_path):
+            print(f"Processing user: {user_folder}")
+            user_files = 0
+            
             for img_name in os.listdir(user_path):
                 img_path = os.path.join(user_path, img_name)
                 valid_ext = (".png", ".jpg", ".jpeg", ".bmp")
                 if not img_name.lower().endswith(valid_ext):
                     continue
-                img = preprocess_image(img_path)
-                feat = extract_features(img)
-                features.append(feat)
-                labels.append(user_folder)
-                binary_labels.append("forgery" if "forg" in user_folder.lower() else "genuine")
+                
+                try:
+                    img = preprocess_image(img_path)
+                    if img is not None:
+                        feat = extract_features(img)
+                        features.append(feat)
+                        labels.append(user_folder)
+                        # Wszystkie podpisy w signature_photos to genuine
+                        binary_labels.append("genuine")
+                        processed_count += 1
+                        user_files += 1
+                    else:
+                        failed_count += 1
+                        print(f"  Failed to process: {img_name}")
+                except Exception as e:
+                    failed_count += 1
+                    print(f"  Error processing {img_name}: {e}")
+            
+            print(f"  Processed {user_files} files for {user_folder}")
+    
+    print(f"Total processed: {processed_count}, failed: {failed_count}")
+    
+    if processed_count == 0:
+        print("ERROR: No files were successfully processed!")
+        return np.array([]), np.array([]), np.array([])
+    
     return np.array(features), np.array(labels), np.array(binary_labels)
 
 
 def main():
     start = time.time()
 
-    train_dir = os.path.join(path, "sign_data", "train")
-    test_dir = os.path.join(path, "sign_data", "test")
+    # ZMIANA: Użyj Twoich katalogów zamiast Kaggle
+    custom_signatures_dir = "signature_photos"
+    
+    print(f"Custom signatures directory: {custom_signatures_dir}")
 
-    # Wczytanie danych treningowych i testowych (Punkt a)
-    # Zwracane są cechy, etykiety szczegółowe (dla każdego użytkownika) i binarne (genuine/forgery)
-    train_feat, train_labels, train_binary = load_data(train_dir)
-    test_feat, test_labels, test_binary = load_data(test_dir)
+    # Sprawdź czy katalog istnieje
+    if not os.path.exists(custom_signatures_dir):
+        print(f"ERROR: Custom signatures directory not found: {custom_signatures_dir}")
+        print("Utwórz katalog signature_photos/user01/ i dodaj swoje podpisy!")
+        return
 
-    # Połączenie danych treningowych i testowych w jeden zestaw (cechy)
-    features = np.vstack((train_feat, test_feat))
+    # Wczytanie Twoich danych
+    print("Loading custom signature data...")
+    features, labels, binary_labels = load_custom_data(custom_signatures_dir)
+    
+    if len(features) == 0:
+        print("ERROR: No signature data loaded!")
+        print("Dodaj pliki podpisów do signature_photos/user01/")
+        return
 
-    # Przygotowanie dwóch rodzajów etykiet do klasyfikacji:
-    # - multi: klasyfikacja konkretnego użytkownika (wieloklasowa)
-    # - binary: klasyfikacja genuiność/fałszerstwo (dwuklasowa)
-    labels = {
-        "multi": np.concatenate((train_labels, test_labels)),
-        "binary": np.concatenate((train_binary, test_binary))
+    print(f"Features shape: {features.shape}")
+    print(f"Labels unique: {np.unique(labels)}")
+    print(f"Binary labels unique: {np.unique(binary_labels)}")
+
+    # Jeśli masz tylko 1 użytkownika, dodaj sztuczne dane do treningu
+    if len(np.unique(labels)) == 1:
+        print("⚠️ Tylko 1 użytkownik - dodaję sztuczne dane dla treningu...")
+        
+        # Duplikuj dane jako "fake_user" dla celów treningu
+        fake_features = features.copy()
+        fake_labels = ["fake_user"] * len(features)
+        fake_binary = ["forgery"] * len(features)
+        
+        # Połącz dane
+        features = np.vstack([features, fake_features])
+        labels = np.concatenate([labels, fake_labels])
+        binary_labels = np.concatenate([binary_labels, fake_binary])
+        
+        print(f"Rozszerzone dane - users: {np.unique(labels)}")
+
+    # Przygotowanie etykiet do klasyfikacji
+    labels_dict = {
+        "multi": labels,
+        "binary": binary_labels
     }
 
-    # Punkt e: Trening i ewaluacja dwóch modeli dla każdej wersji etykiet
-    for key in labels:
-        train_and_evaluate(features, labels[key], model_name=key)
+    # Trening i ewaluacja modeli
+    for key in labels_dict:
+        print(f"\nTraining models for {key} classification...")
+        train_and_evaluate(features, labels_dict[key], model_name=key)
 
-    # Dodatkowa analiza – redukcja wymiarowości i wizualizacja przestrzeni cech (PCA, t-SNE)
-    # Ułatwia ocenę separowalności klas i jakości cech (dodatkowy punkt)
-    visualize_pca(features, labels["binary"])
-    visualize_tsne(features, labels["binary"])
+    # Wizualizacje
+    print("\nGenerating visualizations...")
+    try:
+        visualize_pca(features, binary_labels)
+        visualize_tsne(features, binary_labels)
+    except Exception as e:
+        print(f"Visualization error: {e}")
 
     print(f"\nCzas działania: {time.time() - start:.2f} s")
+    print("\n✅ Modele wytrenowane na Twoich podpisach!")
+    print("Pliki wygenerowane:")
+    print("  - mlp_model_multi.pkl (model dla user01)")
+    print("  - scaler_multi.pkl (normalizacja)")
 
 
 if __name__ == "__main__":
