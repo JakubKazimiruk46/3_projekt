@@ -1,0 +1,16 @@
+[2025-06-10 01:12:56,786] INFO - SimpleFaceRecognitionSystem initialized with tolerance=0.6
+[2025-06-10 01:12:56,787] INFO - Multimodal system initialized: w_face=0.6, w_signature=0.4, threshold=0.5
+[2025-06-10 01:12:56,787] INFO - Face database loaded from face_database.json
+[2025-06-10 01:12:56,787] INFO - Face system ready: 1 users, 2 encodings
+[2025-06-10 01:12:56,799] INFO - Signature model loaded from mlp_model_multi.pkl
+[2025-06-10 01:12:56,799] INFO - Signature system ready
+[2025-06-10 01:12:58,765] INFO - Created test pair: user01_face_test.jpg + user01_signature_test.jpg
+[2025-06-10 01:12:58,765] INFO - Created test dataset with 1 samples for user user01 from test_data
+[2025-06-10 01:12:58,765] INFO - Starting evaluation with 1 test samples...
+[2025-06-10 01:12:58,766] INFO - Testing sample 1/1: user01
+[2025-06-10 01:12:58,766] INFO - Rozpoznawanie twarzy...
+[2025-06-10 01:12:59,605] INFO - Face recognized as user01 with confidence 0.157 (distance: 0.506)
+[2025-06-10 01:12:59,606] INFO - Rozpoznawanie podpisu...
+[2025-06-10 01:12:59,634] INFO - Signature recognized as user01 with confidence 1.000
+[2025-06-10 01:12:59,634] INFO - LOW CONFIDENCE: 0.494 <= 0.5
+[2025-06-10 01:12:59,636] INFO - Evaluation results saved to multimodal_evaluation_results.json
