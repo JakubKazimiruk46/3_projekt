@@ -13,7 +13,6 @@ class Config:
     batch_size: int = 16
     num_epochs: int = 30
     num_visualizations: int = 5
-    face_confidence_threshold: float = 0.5  # Próg ufności detekcji twarzy (dla webcam)
 
     @property
     def train_images_path(self):
